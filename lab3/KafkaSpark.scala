@@ -46,9 +46,10 @@ object KafkaSpark {
     val stateDstream = pairs.mapWithState(StateSpec.function(mappingFunc _))
 
     // store the result in Cassandra
-    stateDstream.saveToCassandra("wordcount_keyspace", "words", SomeColumns("word", "count"))
+    stateDstream.saveToCassandra("avg_space", "avg", SomeColumns("word", "count"))
 
     ssc.start()
     ssc.awaitTermination()
+    session.close()
   }
 }
