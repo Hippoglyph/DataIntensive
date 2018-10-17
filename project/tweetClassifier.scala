@@ -9,12 +9,7 @@ import Constants._
 
 
 object TweetClassifier {
-	def main(args: Array[String]) {
-
-		val conf = new SparkConf().setAppName("BFFs sick stream").setMaster("local[2]")
-		val ssc = new StreamingContext(conf, Seconds(10))
-		ssc.checkpoint("checkpoint")
-
+	def getStream(ssc: StreamingContext) = {
 		val builder = new ConfigurationBuilder()
 	    builder.setOAuthConsumerKey(Constants.consumerKey())
 	    builder.setOAuthConsumerSecret(Constants.consumerSecret())
@@ -23,7 +18,16 @@ object TweetClassifier {
 	    builder.setTweetModeExtended(true)
 	    val configuration = builder.build()
 
-		val stream = TwitterUtils.createStream(ssc, Some(new OAuthAuthorization(configuration)))
+		TwitterUtils.createStream(ssc, Some(new OAuthAuthorization(configuration)))
+	}
+
+	def main(args: Array[String]) {
+
+		val conf = new SparkConf().setAppName("BFFs sick stream").setMaster("local[2]")
+		val ssc = new StreamingContext(conf, Seconds(10))
+		ssc.checkpoint("checkpoint")
+
+		val stream = getStream(ssc)
 
 		val results = stream.foreachRDD(rdd => {
 			val spark = SparkSession.builder.config(rdd.sparkContext.getConf).getOrCreate()
