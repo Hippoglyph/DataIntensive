@@ -4,11 +4,13 @@ import org.apache.spark.streaming._
 import twitter4j.auth.OAuthAuthorization
 import twitter4j.conf.ConfigurationBuilder
 import org.apache.spark.sql._
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
 import Constants._
 //import org.apache.spark.streaming.StreamingContext._
 
 
-object TweetClassifier {
+object Trainer {
 	def getStream(ssc: StreamingContext) = {
 		val builder = new ConfigurationBuilder()
 	    builder.setOAuthConsumerKey(Constants.consumerKey())
@@ -23,9 +25,15 @@ object TweetClassifier {
 
 	def main(args: Array[String]) {
 
+		Logger.getLogger("org").setLevel(Level.OFF)
+		Logger.getLogger("akka").setLevel(Level.OFF)
+
 		val conf = new SparkConf().setAppName("BFFs sick stream").setMaster("local[2]")
-		val ssc = new StreamingContext(conf, Seconds(10))
+		val sc = new SparkContext(conf)
+		val ssc = new StreamingContext(sc, Seconds(10))
 		ssc.checkpoint("checkpoint")
+
+		val word2vec = new Word2vec(conf)
 
 		val stream = getStream(ssc)
 
@@ -33,7 +41,7 @@ object TweetClassifier {
 			val spark = SparkSession.builder.config(rdd.sparkContext.getConf).getOrCreate()
 			import spark.implicits._
 
-			val myTweets = rdd.filter(tweet => tweet.getPlace() != null).filter(tweet => tweet.getPlace().getCountry() != null).filter(tweet => tweet.getLang() != null && tweet.getLang() == "en")
+			val myTweets = rdd.filter(tweet => tweet.getLang() != null && tweet.getLang() == "en")
 			if (!myTweets.isEmpty)
 				myTweets.map(tweet => {
 					val text  = {
@@ -42,8 +50,9 @@ object TweetClassifier {
 						else
 							tweet.getText()
 					}
-					(tweet.getPlace().getCountry, text)
-				}).toDF("Country", "Tweet").coalesce(1).write.partitionBy("Country").mode(SaveMode.Append).json("tweets")
+					text
+				}).map(word2vec.process).collect()
+				println("new tweets: " + myTweets.count)
 		})
 
 		ssc.start()

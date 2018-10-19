@@ -13,5 +13,4 @@ libraryDependencies ++= Seq(
   ("com.datastax.cassandra" % "cassandra-driver-core" % "3.0.0").exclude("io.netty", "netty-handler"),
   //"org.apache.bahir" %% "spark-streaming-twitter" % "2.3.0-SNAPSHOT",
   "org.apache.bahir" %% "spark-streaming-twitter" % "2.2.1",
-  "org.deeplearning4j" % "scalnet_2.11" % "0.9.2-SNAPSHOT"
 )
