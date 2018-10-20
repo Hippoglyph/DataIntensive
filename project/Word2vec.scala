@@ -11,25 +11,11 @@ import org.apache.spark.streaming._
 
 
 
-object Word2vec {
-	//val spark = SparkSession.builder.config(conf).config("spark.cassandra.connection.host", "127.0.0.1").getOrCreate()
-	//val sc = spark.sparkContext
-	//import spark.implicits._
-	//createTable()
-
-	//var wordData = scala.collection.mutable.Map[String, Int]()
-	//var mapLength = wordData.keys.size
-
-
-	
+object Word2vec {	
 	/*
 	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "words", "keyspace" -> "project" )).load()
 
 	df.show()
-
-    val rdd = sc.parallelize(Seq(("Hello", 0, List(3.4,4.3))))
-
-    rdd.saveToCassandra("project", "words", SomeColumns("word", "id", "vector"))
     */
 
     def process(tweet: String, wordData: scala.collection.mutable.Map[String, Int]) = {
@@ -77,24 +63,25 @@ object Word2vec {
     	scala.collection.mutable.Map[String, Int]()
     }
 
-    def getNewMap(orig: scala.collection.mutable.Map[String, Int],newWords: Array[String]) = {
-    	var value = orig.keys.size
+    def addToContender(contenders: scala.collection.mutable.Map[String, Int],newWords: Array[String]) = {
     	newWords.foreach{x =>
-    		orig(x) = value
-    		value += 1
+    		if(contenders.contains(x)){
+    			contenders(x) = contenders(x) + 1
+    		}
+    		else{
+    			contenders(x) = 1
+    		}
     	}
     }
 
-    /*def storeWordData(){
-    	val rdd = sc.parallelize(wordData.toSeq).map{case (key, value) => (key, value, List(0.0,0.0))}
-    	rdd.saveToCassandra("project", "words", SomeColumns("word", "id", "vector"))
+    def addToWordData(wordData: scala.collection.mutable.Map[String, Int],contenders: scala.collection.mutable.Map[String, Int]) = {
+    	var index = wordData.keys.size
+    	for((k,v) <- contenders){
+    		if (v > 5){
+    			wordData(k) = index
+    			contenders.remove(k)
+    			index += 1
+    		}
+    	}
     }
-
-    def createTable(){
-		val cluster = Cluster.builder().addContactPoint("127.0.0.1").build()
-	    val session = cluster.connect()
-	    session.execute("CREATE KEYSPACE IF NOT EXISTS project WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")
-	    session.execute("CREATE TABLE IF NOT EXISTS project.words (word text PRIMARY KEY, id int, vector list<double>);")
-	}*/
-
 }

@@ -44,9 +44,6 @@ object Trainer {
 	def writeToCassandra(wordData: scala.collection.mutable.Map[String, Int], sc: SparkContext){
 		val mapRDD = sc.parallelize((wordData.map{case (k, v) => (k, v, List(2, 2))}).toSeq)
 		mapRDD.saveToCassandra("project", "words", SomeColumns("word", "id", "vector"))
-		/*for((k, v) <- wordData){
-			session.execute("INSERT INTO project.words (word, id, vector) VALUES ('"+k+"',"+v+",[2,2]);")
-		}*/
 	}
 
 	def main(args: Array[String]) {
@@ -63,6 +60,7 @@ object Trainer {
 		val stream = getStream(ssc)
 
 		var wordData = Word2vec.getInitWordData()
+		var contenderWords = Word2vec.getInitWordData()
 
 		val results = stream.foreachRDD(rdd => {
 			val spark = SparkSession.builder.config(rdd.sparkContext.getConf).getOrCreate()
@@ -77,35 +75,23 @@ object Trainer {
 				}).map(tweet => Word2vec.process(tweet, wordData))
 			val uniqueWords = processed.flatMap(x => x).distinct().collect()
 			if (uniqueWords.size > 0){
-				Word2vec.getNewMap(wordData, uniqueWords)
+				Word2vec.addToContender(contenderWords, uniqueWords)
+				Word2vec.addToWordData(wordData, contenderWords)
 			}
 
 			
-			println(wordData.keys.size)
+			println("Total words: " + wordData.keys.size)
+			println("Contenders: " + contenderWords.keys.size)
 			println("new tweets: " + myTweets.count)
 		})
 
-		var old = System.nanoTime
-		while(true){
-			if (System.nanoTime - old > 10*1e9){
-				old = System.nanoTime
-				writeToCassandra(wordData,sc)
-				ssc.stop(false, true)
-				ssc.start()
-			}
-		}
 		ssc.start()
+		while(true){
+			Thread.sleep(10000)
+			writeToCassandra(wordData,sc)
+		}
+		
 		ssc.awaitTermination()
-		/*
-		for(a <- 1 to 5){
-			//writeToCassandra(wordData, session)
-			
-			ssc.start()
-    		ssc.awaitTerminationOrTimeout(11 * 1000)
-    		writeToCassandra(wordData, sc)
-    	}
-    	ssc.stop()
-    	*/
     	session.close()
 	}
 }
