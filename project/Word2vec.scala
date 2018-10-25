@@ -9,28 +9,24 @@ import org.apache.spark.sql._
 //import org.apache.spark.implicits._
 import org.apache.spark.streaming._
 
+import org.apache.spark.mllib.linalg._
 
+import Constants._
 
 object Word2vec {	
-	/*
-	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "words", "keyspace" -> "project" )).load()
 
-	df.show()
-    */
-
-    def process(tweet: String, wordData: scala.collection.mutable.Map[String, Int]) = {
+    def process(tweet: String, wordData: scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)]) = {
     	var newWord = false
-    	val reTweet = tweet.filter(purge)
-    	val tokens = reTweet.split(" ")
+    	val newTweet = tweet.toLowerCase.filter(purge)
+    	val tokens = newTweet.split(" ")
     	var newWords = scala.collection.mutable.Set[String]()
-    	tokens.foreach{x =>
+    	tokens.foreach{word =>
     		var append = true
-    		val word = x.toLowerCase
     		if (wordData.contains(word))
     			append = false
     		else if (word == "")
     			append = false
-    		else if(word.startsWith("http"))
+    		else if(word.contains("http"))
     			append = false
     		else if(isStopWord(word))
     			append = false
@@ -59,8 +55,12 @@ object Word2vec {
     	false
     }
 
-    def getInitWordData() = {
-    	scala.collection.mutable.Map[String, Int]()
+    def getInitWordData(sc: SparkConf) = {
+    	//var wordData = scala.collection.mutable.Map[String, (Int, String)]()
+    	val spark = SparkSession.builder.config(sc).getOrCreate()
+    	import spark.implicits._
+    	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "words", "keyspace" -> "project" )).load()
+    	scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)](df.rdd.map(row => (row(0).asInstanceOf[String], (row(1).asInstanceOf[Int], Vectors.parse(row(2).asInstanceOf[String])))).collectAsMap().toSeq: _*)
     }
 
     def addToContender(contenders: scala.collection.mutable.Map[String, Int],newWords: Array[String]) = {
@@ -74,14 +74,31 @@ object Word2vec {
     	}
     }
 
-    def addToWordData(wordData: scala.collection.mutable.Map[String, Int],contenders: scala.collection.mutable.Map[String, Int]) = {
+    def addToWordData(wordData: scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)],contenders: scala.collection.mutable.Map[String, Int]) = {
     	var index = wordData.keys.size
     	for((k,v) <- contenders){
-    		if (v > 5){
-    			wordData(k) = index
+    		if (v > 10){
+    			val vec = getNewVector()
+    			wordData(k) = (index, Vectors.dense(vec))
     			contenders.remove(k)
     			index += 1
     		}
+    	}
+    }
+
+    def getNewVector() = {
+    	val r = scala.util.Random
+    	(for(i <- 1 to Constants.vectorLength()) yield (r.nextDouble*2-1)).toArray
+    }
+
+    def cleanUpContender(contenders: scala.collection.mutable.Map[String, Int]){
+    	println("Contender cleaning...")
+    	for((k,v) <- contenders){
+    		val newValue = v - 1
+    		if(newValue < 1)
+    			contenders.remove(k)
+    		else
+    			contenders(k) = newValue
     	}
     }
 }

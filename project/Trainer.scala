@@ -15,6 +15,8 @@ import com.datastax.spark.connector._
 import com.datastax.driver.core.{Session, Cluster, Host, Metadata}
 import com.datastax.spark.connector.streaming._
 
+import org.apache.spark.mllib.linalg._
+
 
 object Trainer {
 	def getStream(ssc: StreamingContext) = {
@@ -37,12 +39,12 @@ object Trainer {
 		val cluster = Cluster.builder().addContactPoint("127.0.0.1").build()
 	    val session = cluster.connect()
 	    session.execute("CREATE KEYSPACE IF NOT EXISTS project WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")
-	    session.execute("CREATE TABLE IF NOT EXISTS project.words (word text PRIMARY KEY, id int, vector list<double>);")
+	    session.execute("CREATE TABLE IF NOT EXISTS project.words (word text PRIMARY KEY, id int, vector text);")
 	    session
 	}
 
-	def writeToCassandra(wordData: scala.collection.mutable.Map[String, Int], sc: SparkContext){
-		val mapRDD = sc.parallelize((wordData.map{case (k, v) => (k, v, List(2, 2))}).toSeq)
+	def writeToCassandra(wordData: scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)], sc: SparkContext){
+		val mapRDD = sc.parallelize((wordData.map{case (k, (id, vec)) => (k, id, vec.toString())}).toSeq)
 		mapRDD.saveToCassandra("project", "words", SomeColumns("word", "id", "vector"))
 	}
 
@@ -57,14 +59,17 @@ object Trainer {
 		ssc.checkpoint("checkpoint")
 		val session = createCassandra(conf)
 
-		val stream = getStream(ssc)
+		var wordData = Word2vec.getInitWordData(conf)
+		var contenderWords = scala.collection.mutable.Map[String, Int]()
 
-		var wordData = Word2vec.getInitWordData()
-		var contenderWords = Word2vec.getInitWordData()
+		val stream = getStream(ssc)
 
 		val results = stream.foreachRDD(rdd => {
 			val spark = SparkSession.builder.config(rdd.sparkContext.getConf).getOrCreate()
 			import spark.implicits._
+
+			val wordDataBC = rdd.sparkContext.broadcast(wordData)
+			//val contenderWordsBC = rdd.sparkContext.broadcast(contenderWords)
 
 			val myTweets = rdd.filter(tweet => tweet.getLang() != null && tweet.getLang() == "en")
 			val processed = myTweets.map(tweet => {
@@ -72,7 +77,7 @@ object Trainer {
 						tweet.getRetweetedStatus().getText()
 					else
 						tweet.getText()
-				}).map(tweet => Word2vec.process(tweet, wordData))
+				}).map(tweet => Word2vec.process(tweet, wordDataBC.value))
 			val uniqueWords = processed.flatMap(x => x).distinct().collect()
 			if (uniqueWords.size > 0){
 				Word2vec.addToContender(contenderWords, uniqueWords)
@@ -86,9 +91,16 @@ object Trainer {
 		})
 
 		ssc.start()
+		var loopCounter = 0
 		while(true){
 			Thread.sleep(10000)
-			writeToCassandra(wordData,sc)
+			loopCounter += 1
+			if(loopCounter % (6 * 5) == 0)
+				writeToCassandra(wordData,sc)
+			if(loopCounter % (6 * 10) ==  0)
+				Word2vec.cleanUpContender(contenderWords)
+
+			loopCounter = loopCounter % (6 * 30)
 		}
 		
 		ssc.awaitTermination()
