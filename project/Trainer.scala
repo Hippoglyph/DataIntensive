@@ -77,6 +77,7 @@ object Trainer {
 			import spark.implicits._
 
 			val wordDataBC = rdd.sparkContext.broadcast(wordData)
+			val modelBC = rdd.sparkContext.broadcast(model)
 			//val contenderWordsBC = rdd.sparkContext.broadcast(contenderWords)
 
 			val myTweets = rdd.filter(tweet => tweet.getLang() != null && tweet.getLang() == "en")
@@ -85,7 +86,7 @@ object Trainer {
 						tweet.getRetweetedStatus().getText()
 					else
 						tweet.getText()
-				}).map(tweet => Word2vec.process(tweet, wordDataBC.value, model))
+				}).map(tweet => Word2vec.process(tweet, wordDataBC.value, modelBC.value))
 			val uniqueWords = processed.flatMap(x => x).distinct().collect()
 			if (uniqueWords.size > 0){
 				Word2vec.addToContender(contenderWords, uniqueWords)

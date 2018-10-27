@@ -43,23 +43,25 @@ object Word2vec {
     	}
     	val x = new DenseMatrix(Constants.vectorLength, okWords.length, okWords.flatMap(i => (wordData(tokens(i))._2).toArray).toArray)
     	val indeces = okWords.map(i => wordData(tokens(i))._1)
-    	val Y = new DenseMatrix(model.rows, okWords.length, okWords.flatMap(i => getContextVector(okWords, indeces, model.rows, i)).toArray)
+    	val yArray = scala.collection.mutable.ListBuffer[Array[Double]]()
+    	for(i <- 0 until indeces.length){
+    		yArray += getContextVector(indeces.length, indeces, model.rows, i)
+    	}
+    	val Y = new DenseMatrix(model.rows, okWords.length, yArray.flatten.toArray)
 
     	newWords.toSet
     }
 
-    def getContextVector(okWords: scala.collection.mutable.ListBuffer[Int], indeces: scala.collection.mutable.ListBuffer[Int], size: Int, index: Int) = {
+    def getContextVector(tweetLength: Int, indeces: scala.collection.mutable.ListBuffer[Int], size: Int, index: Int) = {
     	var col = DenseVector.zeros[Double](size)
     	for(i <- 1 to Constants.contextSize()){
-    		if(index + i < okWords.length)
-    			col.update((indeces(index+i)),1.0)
+    		if(index + i < tweetLength)
+    			col.update(indeces(index+i),1.0)
     		if(index - i >= 0)
-    			col.update((indeces(index-i)),1.0)
+    			col.update(indeces(index-i),1.0)
     	}
     	col.toArray
     }
-
-
 
     def purge(c: Char) = {
     	val llegals = Set('q','w','e','r','t','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m','`',''',' ','\t')
@@ -95,10 +97,9 @@ object Word2vec {
     	val spark = SparkSession.builder.config(sc).getOrCreate()
     	import spark.implicits._
     	import org.apache.spark.sql.functions._
-    	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "w", "keyspace" -> "project" )).load().orderBy(asc("id")).foreach{row =>
+    	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "w", "keyspace" -> "project" )).load().orderBy(asc("id")).collect.foreach{row =>
     		model = appendRow(model, DenseVector(row.getAs[Seq[Double]](1).toArray))
     	}
-
   		model
     }
 
