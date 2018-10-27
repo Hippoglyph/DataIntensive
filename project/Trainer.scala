@@ -15,8 +15,8 @@ import com.datastax.spark.connector._
 import com.datastax.driver.core.{Session, Cluster, Host, Metadata}
 import com.datastax.spark.connector.streaming._
 
-import org.apache.spark.mllib.linalg._
-
+//import org.apache.spark.mllib.linalg._
+import breeze.linalg._
 
 object Trainer {
 	def getStream(ssc: StreamingContext) = {
@@ -39,13 +39,20 @@ object Trainer {
 		val cluster = Cluster.builder().addContactPoint("127.0.0.1").build()
 	    val session = cluster.connect()
 	    session.execute("CREATE KEYSPACE IF NOT EXISTS project WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };")
-	    session.execute("CREATE TABLE IF NOT EXISTS project.words (word text PRIMARY KEY, id int, vector text);")
+	    session.execute("CREATE TABLE IF NOT EXISTS project.words (word text PRIMARY KEY, id int, vector list<double>);")
+	    session.execute("CREATE TABLE IF NOT EXISTS project.w (id int PRIMARY KEY, vector list<double>);")
 	    session
 	}
 
-	def writeToCassandra(wordData: scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)], sc: SparkContext){
-		val mapRDD = sc.parallelize((wordData.map{case (k, (id, vec)) => (k, id, vec.toString())}).toSeq)
+	def writeToCassandra(wordData: scala.collection.mutable.Map[String, (Int, DenseVector[Double])], model: DenseMatrix[Double],sc: SparkContext){
+		val mapRDD = sc.parallelize((wordData.map{case (k, (id, vec)) => (k, id, vec.toArray.toSeq)}).toSeq)
+		var rowCounter = -1
+		val modelRDD = sc.parallelize((model(*,::).map(x => {
+			rowCounter += 1
+			(rowCounter, x.toArray.toSeq)
+		})).toArray.toSeq)
 		mapRDD.saveToCassandra("project", "words", SomeColumns("word", "id", "vector"))
+		modelRDD.saveToCassandra("project", "w", SomeColumns("id", "vector"))
 	}
 
 	def main(args: Array[String]) {
@@ -61,6 +68,7 @@ object Trainer {
 
 		var wordData = Word2vec.getInitWordData(conf)
 		var contenderWords = scala.collection.mutable.Map[String, Int]()
+		var model = Word2vec.getInitModel(conf)
 
 		val stream = getStream(ssc)
 
@@ -81,7 +89,9 @@ object Trainer {
 			val uniqueWords = processed.flatMap(x => x).distinct().collect()
 			if (uniqueWords.size > 0){
 				Word2vec.addToContender(contenderWords, uniqueWords)
-				Word2vec.addToWordData(wordData, contenderWords)
+				val cancer = Word2vec.addToWordData(wordData, contenderWords, model)
+				if(cancer.rows > 0)
+					model = DenseMatrix.vertcat(model,cancer)
 			}
 
 			
@@ -96,7 +106,7 @@ object Trainer {
 			Thread.sleep(10000)
 			loopCounter += 1
 			if(loopCounter % (6 * 5) == 0)
-				writeToCassandra(wordData,sc)
+				writeToCassandra(wordData,model,sc)
 			if(loopCounter % (6 * 10) ==  0)
 				Word2vec.cleanUpContender(contenderWords)
 

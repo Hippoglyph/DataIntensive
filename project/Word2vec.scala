@@ -9,21 +9,28 @@ import org.apache.spark.sql._
 //import org.apache.spark.implicits._
 import org.apache.spark.streaming._
 
-import org.apache.spark.mllib.linalg._
+//import org.apache.spark.mllib.linalg._
 
 import Constants._
 
+import breeze.linalg._
+import breeze.numerics._
+
 object Word2vec {	
 
-    def process(tweet: String, wordData: scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)]) = {
+    def process(tweet: String, wordData: scala.collection.mutable.Map[String, (Int, DenseVector[Double])]) = {
     	var newWord = false
     	val newTweet = tweet.toLowerCase.filter(purge)
-    	val tokens = newTweet.split(" ")
+    	val tokens = newTweet.split("\\s+")
     	var newWords = scala.collection.mutable.Set[String]()
+    	var okWords = scala.collection.mutable.ListBuffer[Int]()
+    	var index = 0
     	tokens.foreach{word =>
     		var append = true
-    		if (wordData.contains(word))
+    		if (wordData.contains(word)){
     			append = false
+    			okWords += index
+    		}
     		else if (word == "")
     			append = false
     		else if(word.contains("http"))
@@ -32,9 +39,19 @@ object Word2vec {
     			append = false
     		if(append)
     			newWords += word
+    		index += 1
     	}
+    	val x = new DenseMatrix(Constants.vectorLength, okWords.length, okWords.flatMap(i => (wordData(tokens(i))._2).toArray).toArray)
+    	val indeces = okWords.map(i => wordData(tokens(i))._1)
+
+
+
+
+
     	newWords.toSet
     }
+
+
 
     def purge(c: Char) = {
     	val llegals = Set('q','w','e','r','t','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m','`',''',' ','\t')
@@ -60,7 +77,25 @@ object Word2vec {
     	val spark = SparkSession.builder.config(sc).getOrCreate()
     	import spark.implicits._
     	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "words", "keyspace" -> "project" )).load()
-    	scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)](df.rdd.map(row => (row(0).asInstanceOf[String], (row(1).asInstanceOf[Int], Vectors.parse(row(2).asInstanceOf[String])))).collectAsMap().toSeq: _*)
+    	//scala.collection.mutable.Map[String, (Int, breeze.linalg.DenseVector[Double])]()
+    	scala.collection.mutable.Map[String, (Int, DenseVector[Double])](df.rdd.map(row => (row.getString(0), (row.getInt(1), DenseVector(row.getAs[Seq[Double]](2).toArray)))).collectAsMap().toSeq: _*)
+    }
+
+    def getInitModel(sc: SparkConf) = {
+    	var model = DenseMatrix.zeros[Double](0,Constants.vectorLength)
+
+    	val spark = SparkSession.builder.config(sc).getOrCreate()
+    	import spark.implicits._
+    	import org.apache.spark.sql.functions._
+    	val df = spark.read.format("org.apache.spark.sql.cassandra").options(Map( "table" -> "w", "keyspace" -> "project" )).load().orderBy(asc("id")).foreach{row =>
+    		model = appendRow(model, DenseVector(row.getAs[Seq[Double]](1).toArray))
+    	}
+
+  		model
+    }
+
+    def appendRow(model: DenseMatrix[Double], vector: DenseVector[Double]) = {
+    	DenseMatrix.vertcat(model,vector.asDenseMatrix)
     }
 
     def addToContender(contenders: scala.collection.mutable.Map[String, Int],newWords: Array[String]) = {
@@ -74,16 +109,20 @@ object Word2vec {
     	}
     }
 
-    def addToWordData(wordData: scala.collection.mutable.Map[String, (Int, org.apache.spark.mllib.linalg.Vector)],contenders: scala.collection.mutable.Map[String, Int]) = {
+    def addToWordData(wordData: scala.collection.mutable.Map[String, (Int, DenseVector[Double])],contenders: scala.collection.mutable.Map[String, Int], model: DenseMatrix[Double]) = {
     	var index = wordData.keys.size
+    	var newModelCancer = DenseMatrix.zeros[Double](0,Constants.vectorLength)
     	for((k,v) <- contenders){
     		if (v > 10){
     			val vec = getNewVector()
-    			wordData(k) = (index, Vectors.dense(vec))
+    			val weight = getNewVector()
+    			wordData(k) = (index, DenseVector(vec))
     			contenders.remove(k)
+    			newModelCancer = appendRow(newModelCancer, DenseVector(weight))
     			index += 1
     		}
     	}
+    	newModelCancer
     }
 
     def getNewVector() = {
