@@ -18,7 +18,7 @@ import breeze.numerics._
 
 object Word2vec {	
 
-    def process(tweet: String, wordData: scala.collection.mutable.Map[String, (Int, DenseVector[Double])]) = {
+    def process(tweet: String, wordData: scala.collection.mutable.Map[String, (Int, DenseVector[Double])], model: DenseMatrix[Double]) = {
     	var newWord = false
     	val newTweet = tweet.toLowerCase.filter(purge)
     	val tokens = newTweet.split("\\s+")
@@ -43,12 +43,20 @@ object Word2vec {
     	}
     	val x = new DenseMatrix(Constants.vectorLength, okWords.length, okWords.flatMap(i => (wordData(tokens(i))._2).toArray).toArray)
     	val indeces = okWords.map(i => wordData(tokens(i))._1)
-
-
-
-
+    	val Y = new DenseMatrix(model.rows, okWords.length, okWords.flatMap(i => getContextVector(okWords, indeces, model.rows, i)).toArray)
 
     	newWords.toSet
+    }
+
+    def getContextVector(okWords: scala.collection.mutable.ListBuffer[Int], indeces: scala.collection.mutable.ListBuffer[Int], size: Int, index: Int) = {
+    	var col = DenseVector.zeros[Double](size)
+    	for(i <- 1 to Constants.contextSize()){
+    		if(index + i < okWords.length)
+    			col.update((indeces(index+i)),1.0)
+    		if(index - i >= 0)
+    			col.update((indeces(index-i)),1.0)
+    	}
+    	col.toArray
     }
 
 

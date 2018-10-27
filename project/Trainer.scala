@@ -85,7 +85,7 @@ object Trainer {
 						tweet.getRetweetedStatus().getText()
 					else
 						tweet.getText()
-				}).map(tweet => Word2vec.process(tweet, wordDataBC.value))
+				}).map(tweet => Word2vec.process(tweet, wordDataBC.value, model))
 			val uniqueWords = processed.flatMap(x => x).distinct().collect()
 			if (uniqueWords.size > 0){
 				Word2vec.addToContender(contenderWords, uniqueWords)
