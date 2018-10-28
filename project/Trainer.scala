@@ -87,19 +87,13 @@ object Trainer {
 					else
 						tweet.getText()
 				}).map(tweet => Word2vec.process(tweet, wordDataBC.value, modelBC.value))
-			val uniqueWords = processed.flatMap(x => x._1).distinct().collect()
-			if (uniqueWords.size > 0){
-				Word2vec.addToContender(contenderWords, uniqueWords)
-				val cancer = Word2vec.addToWordData(wordData, contenderWords, model)
-				if(cancer.rows > 0)
-					model = DenseMatrix.vertcat(model,cancer)
-			}
-
 			//Update model
 			val rddWGrad = processed.map(x=>x._2)
 			val wGradient = rddWGrad.reduce((a,b) => a + b) :*= (1.0/rddWGrad.count)
+			//println("Model shape: (" + model.rows + ", " + model.cols + ")")
 			model = model - (wGradient :*= Constants.learningRate())
-
+			//println("Model after: (" + model.rows + ", " + model.cols + ")")
+			
 			val rddXGrad = processed.flatMap(x=>x._3)
 			val xGradient = rddXGrad.groupByKey().map{x=> 
 				val count = (x._2).size
@@ -107,11 +101,21 @@ object Trainer {
 				(x._1, sum :*= (1.0/count))
 			}
 
-			xGradient.foreach{grad=>
+
+			xGradient.collect.foreach{grad=>
 				wordData(grad._1) = (wordData(grad._1)._1, wordData(grad._1)._2 - (grad._2 :*= Constants.learningRate()))
-			}
+			} 
 
 			
+			val uniqueWords = processed.flatMap(x => x._1).distinct().collect()
+			if (uniqueWords.size > 0){
+				Word2vec.addToContender(contenderWords, uniqueWords)
+				val cancer = Word2vec.addToWordData(wordData, contenderWords, model)
+				if(cancer.rows > 0)
+					model = DenseMatrix.vertcat(model,cancer)
+			}
+			
+
 			println("Total words: " + wordData.keys.size)
 			println("Contenders: " + contenderWords.keys.size)
 			println("new tweets: " + myTweets.count)
