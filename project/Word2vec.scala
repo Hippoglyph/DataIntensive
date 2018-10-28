@@ -41,24 +41,54 @@ object Word2vec {
     			newWords += word
     		index += 1
     	}
-    	val x = new DenseMatrix(Constants.vectorLength, okWords.length, okWords.flatMap(i => (wordData(tokens(i))._2).toArray).toArray)
-    	val indeces = okWords.map(i => wordData(tokens(i))._1)
-    	val yArray = scala.collection.mutable.ListBuffer[Array[Double]]()
-    	for(i <- 0 until indeces.length){
-    		yArray += getContextVector(indeces.length, indeces, model.rows, i)
-    	}
-    	val Y = new DenseMatrix(model.rows, okWords.length, yArray.flatten.toArray)
+    	if(okWords.length > 0){
+	    	val x = new DenseMatrix(Constants.vectorLength, okWords.length, okWords.flatMap(i => (wordData(tokens(i))._2).toArray).toArray)
+	    	val indeces = okWords.map(i => wordData(tokens(i))._1)
+	    	val yArray = scala.collection.mutable.ListBuffer[Array[Double]]()
+	    	for(i <- 0 until indeces.length){
+	    		yArray += getContextVector(indeces.length, indeces, model.rows, i)
+	    	}
+	    	val Y = new DenseMatrix(model.rows, okWords.length, yArray.flatten.toArray)
+	    	val P = getP(model, x)
+	    	val g = P - Y
 
-    	newWords.toSet
+	    	val wGrad = g * x.t
+	    	val xGrad = model.t * g
+	    	var xGradList = scala.collection.mutable.ListBuffer[(String, DenseVector[Double])]()
+	    	for (c <- 0 until xGrad.cols){
+	    		xGradList += ((tokens(okWords(c)), xGrad(::,c)))
+	    	}
+	    	(newWords.toSet, wGrad, xGradList)
+    	}
+    	else {
+    		(newWords.toSet, DenseMatrix.zeros[Double](model.rows, model.cols), scala.collection.mutable.ListBuffer[(String, DenseVector[Double])]())
+    	}
+    }
+
+    def getP(model: DenseMatrix[Double], x: DenseMatrix[Double]) = {
+    	var m = model * x
+    	val ex = exp(m)
+    	val s = sum(ex(::,*))
+    	for(c <- 0 until m.cols){
+    		for(r <- 0 until m.rows){
+    			m(r,c) = ex(r,c)/s(c)
+    		}
+    	}
+    	m
     }
 
     def getContextVector(tweetLength: Int, indeces: scala.collection.mutable.ListBuffer[Int], size: Int, index: Int) = {
-    	var col = DenseVector.zeros[Double](size)
+    	var indexes = scala.collection.mutable.ListBuffer[Int]()
     	for(i <- 1 to Constants.contextSize()){
     		if(index + i < tweetLength)
-    			col.update(indeces(index+i),1.0)
+    			indexes += indeces(index + i)
     		if(index - i >= 0)
-    			col.update(indeces(index-i),1.0)
+    			indexes += indeces(index - i)
+    	}
+    	val value = 1.0/indexes.length
+    	var col = DenseVector.zeros[Double](size)
+    	indexes.foreach{id =>
+    		col.update(id,value)
     	}
     	col.toArray
     }
