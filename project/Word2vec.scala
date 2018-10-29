@@ -85,7 +85,7 @@ object Word2vec {
     		if(index - i >= 0)
     			indexes += indeces(index - i)
     	}
-    	val value = 1.0/indexes.length
+    	val value = if (indexes.length > 0) 1.0/indexes.length else 0.0
     	var col = DenseVector.zeros[Double](size)
     	indexes.foreach{id =>
     		col.update(id,value)

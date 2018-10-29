@@ -90,9 +90,7 @@ object Trainer {
 			//Update model
 			val rddWGrad = processed.map(x=>x._2)
 			val wGradient = rddWGrad.reduce((a,b) => a + b) :*= (1.0/rddWGrad.count)
-			//println("Model shape: (" + model.rows + ", " + model.cols + ")")
 			model = model - (wGradient :*= Constants.learningRate())
-			//println("Model after: (" + model.rows + ", " + model.cols + ")")
 			
 			val rddXGrad = processed.flatMap(x=>x._3)
 			val xGradient = rddXGrad.groupByKey().map{x=> 
@@ -101,11 +99,9 @@ object Trainer {
 				(x._1, sum :*= (1.0/count))
 			}
 
-
 			xGradient.collect.foreach{grad=>
 				wordData(grad._1) = (wordData(grad._1)._1, wordData(grad._1)._2 - (grad._2 :*= Constants.learningRate()))
 			} 
-
 			
 			val uniqueWords = processed.flatMap(x => x._1).distinct().collect()
 			if (uniqueWords.size > 0){
@@ -114,7 +110,6 @@ object Trainer {
 				if(cancer.rows > 0)
 					model = DenseMatrix.vertcat(model,cancer)
 			}
-			
 
 			println("Total words: " + wordData.keys.size)
 			println("Contenders: " + contenderWords.keys.size)
