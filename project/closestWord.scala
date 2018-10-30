@@ -38,10 +38,11 @@ object closestWord {
 		val point = wordData(word)
 		val distanceList = wordData.map{case (w, vector) => (w, getDistance(point, vector))}.toArray
 		val sorted = distanceList.sortWith((a,b) => a._2 < b._2)
+		val maxDist = distanceList.map(x => x._2).reduceLeft(_ max _)
 
 		for(i <- 0 to N){
 			if (sorted(i)._1 != word){
-				println(sorted(i)._1)
+				println(sorted(i)._1 + " (" + scala.math.floor(100*(1 - (sorted(i)._2/maxDist))) + "%)")
 			}
 		}
 	}
